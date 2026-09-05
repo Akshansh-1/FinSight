@@ -23,7 +23,14 @@ interface JournalEntryFormProps {
   existingBudgets: Array<{ label: string; amount: number; frequency: string }>;
   onAnalyzeAndSave: (
     text: string
-  ) => Promise<{ success: boolean; analysis?: FinancialAnalysis; error?: string; entryId?: string }>;
+  ) => Promise<{
+    success: boolean;
+    analysis?: FinancialAnalysis;
+    analyses?: FinancialAnalysis[];
+    error?: string;
+    entryId?: string;
+    entryIds?: string[];
+  }>;
   onConfirmSuggestedBudget: (budget: SuggestedBudget, sourceEntryId?: string) => Promise<void>;
 }
 
@@ -69,6 +76,7 @@ export const JournalEntryForm: React.FC<JournalEntryFormProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successCelebration, setSuccessCelebration] = useState(false);
   const [lastAnalysis, setLastAnalysis] = useState<FinancialAnalysis | null>(null);
+  const [lastAnalyses, setLastAnalyses] = useState<FinancialAnalysis[]>([]);
   const [lastEntryId, setLastEntryId] = useState<string | undefined>(undefined);
   const [suggestedBudgetPending, setSuggestedBudgetPending] = useState<SuggestedBudget | null>(null);
   const [budgetAddedSuccess, setBudgetAddedSuccess] = useState(false);
@@ -119,17 +127,25 @@ export const JournalEntryForm: React.FC<JournalEntryFormProps> = ({
     setLoading(true);
     setErrorMessage(null);
     setLastAnalysis(null);
+    setLastAnalyses([]);
     setLastEntryId(undefined);
     setSuggestedBudgetPending(null);
     setBudgetAddedSuccess(false);
 
     const result = await onAnalyzeAndSave(entryText);
 
-    if (result.success && result.analysis) {
-      setLastAnalysis(result.analysis);
-      setLastEntryId(result.entryId);
-      if (result.analysis.suggested_budget) {
-        setSuggestedBudgetPending(result.analysis.suggested_budget);
+    if (result.success && (result.analyses || result.analysis)) {
+      const items = (result.analyses && result.analyses.length > 0)
+        ? result.analyses
+        : (result.analysis ? [result.analysis] : []);
+
+      setLastAnalyses(items);
+      setLastAnalysis(items[0] || null);
+      setLastEntryId(result.entryId || (result.entryIds && result.entryIds[0]));
+
+      const itemWithBudget = items.find((it) => it.suggested_budget);
+      if (itemWithBudget?.suggested_budget) {
+        setSuggestedBudgetPending(itemWithBudget.suggested_budget);
       }
       // Clear input only upon confirmed successful save
       setEntryText("");
@@ -421,53 +437,83 @@ export const JournalEntryForm: React.FC<JournalEntryFormProps> = ({
         {lastAnalysis && (
           <div
             id="latest-analysis-card"
-            className="p-4 sm:p-5 border border-[#8FA899] bg-[#F8F9F5] space-y-3"
+            className="p-4 sm:p-5 border border-[#8FA899] bg-[#F8F9F5] space-y-4"
           >
-            <div className="flex items-start justify-between gap-3 border-b border-[#8FA899]/40 pb-3">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-tech text-xs uppercase tracking-wider font-bold text-[#13241A]">
-                    [{lastAnalysis.category.toUpperCase()}]
-                  </span>
-                  <span className="font-tech text-[9px] uppercase px-1.5 py-0.5 border border-[#8FA899] bg-white text-[#13241A] font-bold">
-                    {lastAnalysis.entry_type}
-                  </span>
-                  {lastAnalysis.is_recurring && (
-                    <span className="inline-flex items-center gap-1 font-tech text-[9px] uppercase px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 font-bold">
-                      <CalendarCheck className="w-3 h-3" />
-                      RECURRING SCHEDULED
-                    </span>
+            {lastAnalyses.length > 1 && (
+              <div className="flex items-center justify-between border-b border-[#8FA899]/60 pb-2">
+                <span className="font-tech text-xs uppercase tracking-wider font-bold text-[#13241A]">
+                  [BATCH PARSED: {lastAnalyses.length} DISTINCT TRANSACTIONS RECORDED]
+                </span>
+                <span className="font-mono text-[10px] text-[#526E5D]">
+                  Total: {formatCurrency(
+                    lastAnalyses.reduce((acc, it) => acc + it.converted_amount, 0),
+                    homeCurrency
                   )}
-                </div>
-                <div className="mt-2 flex items-baseline gap-2">
-                  {lastAnalysis.amount > 0 ? (
-                    <>
-                      <span className="font-tech text-2xl font-bold text-[#13241A]">
-                        {formatCurrency(lastAnalysis.converted_amount, homeCurrency)}
-                      </span>
-                      {lastAnalysis.currency !== homeCurrency && (
-                        <span className="font-mono text-[10px] text-[#526E5D]">
-                          ({formatCurrency(lastAnalysis.amount, lastAnalysis.currency)} @ 1 {lastAnalysis.currency} = {lastAnalysis.fx_rate_used} {homeCurrency})
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <span className="font-sans text-sm italic text-[#526E5D]">
-                      Introspective / Reflection Entry (Zero Direct Outflow)
-                    </span>
-                  )}
-                </div>
+                </span>
               </div>
+            )}
 
-              <div>{getFlagBadge(lastAnalysis.flag)}</div>
-            </div>
+            <div className="space-y-3">
+              {(lastAnalyses.length > 1 ? lastAnalyses : [lastAnalysis]).map((item, idx) => (
+                <div
+                  key={idx}
+                  className={`space-y-3 ${
+                    lastAnalyses.length > 1 ? "p-3.5 bg-white border border-[#8FA899]/60" : ""
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3 border-b border-[#8FA899]/40 pb-3">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-tech text-xs uppercase tracking-wider font-bold text-[#13241A]">
+                          [{item.category.toUpperCase()}]
+                        </span>
+                        {item.description && (
+                          <span className="font-sans text-xs font-semibold text-[#13241A]">
+                            {item.description}
+                          </span>
+                        )}
+                        <span className="font-tech text-[9px] uppercase px-1.5 py-0.5 border border-[#8FA899] bg-white text-[#13241A] font-bold">
+                          {item.entry_type}
+                        </span>
+                        {item.is_recurring && (
+                          <span className="inline-flex items-center gap-1 font-tech text-[9px] uppercase px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 font-bold">
+                            <CalendarCheck className="w-3 h-3" />
+                            RECURRING SCHEDULED
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 flex items-baseline gap-2">
+                        {item.amount > 0 ? (
+                          <>
+                            <span className="font-tech text-2xl font-bold text-[#13241A]">
+                              {formatCurrency(item.converted_amount, homeCurrency)}
+                            </span>
+                            {item.currency !== homeCurrency && (
+                              <span className="font-mono text-[10px] text-[#526E5D]">
+                                ({formatCurrency(item.amount, item.currency)} @ 1 {item.currency} = {item.fx_rate_used} {homeCurrency})
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="font-sans text-sm italic text-[#526E5D]">
+                            Introspective / Reflection Entry (Zero Direct Outflow)
+                          </span>
+                        )}
+                      </div>
+                    </div>
 
-            {/* Gemini Direct Reflection Quote */}
-            <div className="border-l-2 border-[#2D6A4F] pl-3 py-1 text-xs text-[#13241A] leading-relaxed bg-white p-2.5">
-              <span className="font-tech text-[9px] uppercase tracking-wider text-[#2D6A4F] font-bold block mb-1">
-                [SYS] GEMINI FINANCIAL ADVISORY
-              </span>
-              <p className="font-sans italic">{lastAnalysis.advice}</p>
+                    <div>{getFlagBadge(item.flag)}</div>
+                  </div>
+
+                  {/* Gemini Direct Reflection Quote */}
+                  <div className="border-l-2 border-[#2D6A4F] pl-3 py-1 text-xs text-[#13241A] leading-relaxed bg-white p-2.5">
+                    <span className="font-tech text-[9px] uppercase tracking-wider text-[#2D6A4F] font-bold block mb-1">
+                      [SYS] GEMINI FINANCIAL ADVISORY
+                    </span>
+                    <p className="font-sans italic">{item.advice}</p>
+                  </div>
+                </div>
+              ))}
             </div>
 
             {/* Suggested Recurring Budget */}

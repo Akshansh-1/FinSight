@@ -56,7 +56,52 @@ function normalizeCurrencyCode(currStr: string, homeCurrency: string): string {
     }
     return symbolMap[cleaned];
   }
+
+  const wordMap: Record<string, string> = {
+    "RUPEE": "INR",
+    "RUPEES": "INR",
+    "RS": "INR",
+    "INR": "INR",
+    "DOLLAR": "USD",
+    "DOLLARS": "USD",
+    "BUCKS": "USD",
+    "USD": "USD",
+    "EURO": "EUR",
+    "EUROS": "EUR",
+    "EUR": "EUR",
+    "POUND": "GBP",
+    "POUNDS": "GBP",
+    "GBP": "GBP",
+    "YEN": "JPY",
+    "JPY": "JPY",
+    "DIRHAM": "AED",
+    "DIRHAMS": "AED",
+    "AED": "AED",
+    "YUAN": "CNY",
+    "CNY": "CNY",
+    "PESO": "MXN",
+    "PESOS": "MXN",
+    "MXN": "MXN",
+    "REAL": "BRL",
+    "REAIS": "BRL",
+    "BRL": "BRL",
+    "RAND": "ZAR",
+    "ZAR": "ZAR",
+    "FRANC": "CHF",
+    "FRANCS": "CHF",
+    "CHF": "CHF",
+    "CAD": "CAD",
+    "AUD": "AUD",
+    "SGD": "SGD",
+  };
+  if (wordMap[cleaned]) {
+    return wordMap[cleaned];
+  }
+
   const lettersOnly = cleaned.replace(/[^A-Z]/g, "");
+  if (wordMap[lettersOnly]) {
+    return wordMap[lettersOnly];
+  }
   if (lettersOnly.length === 3) {
     return lettersOnly;
   }
@@ -163,16 +208,17 @@ function isRecoverableStatus(err: any): boolean {
   ) {
     return true;
   }
-  const str = String(err?.message || err);
+  const str = String(err?.message || err).toLowerCase();
   return (
     str.includes("503") ||
-    str.includes("UNAVAILABLE") ||
+    str.includes("unavailable") ||
     str.includes("429") ||
-    str.includes("RESOURCE_EXHAUSTED") ||
+    str.includes("resource_exhausted") ||
+    str.includes("spending cap") ||
     str.includes("high demand") ||
     str.includes("spikes in demand") ||
     str.includes("404") ||
-    str.includes("NOT_FOUND")
+    str.includes("not_found")
   );
 }
 
@@ -350,7 +396,89 @@ Guidelines:
     }
   });
 
-  // Main Journal Entry Analysis Route
+// Fallback multi-item parser for resilience if AI model services are unavailable
+function fallbackMultiItemParser(text: string, homeCurrency: string, rates: Record<string, number>) {
+  const chunks = text.split(/(?<=[a-zA-Z\s])(?=(?:(?:\$|€|£|₹|¥|USD|EUR|GBP|INR|JPY|CAD|AUD|rupees?|bucks?|dollars?)\s*\d+)|\d+\s*(?:\$|€|£|₹|¥|USD|EUR|GBP|INR|JPY|CAD|AUD|rupees?|bucks?|dollars?))/i);
+  const extracted: Array<{ amount: number; currency: string; description: string }> = [];
+
+  for (const chunk of chunks) {
+    const trimmed = chunk.trim();
+    if (!trimmed) continue;
+    const match = trimmed.match(/(?:(\$|€|£|₹|¥|USD|EUR|GBP|INR|JPY|CAD|AUD|rupees?|bucks?|dollars?)\s*(\d+(?:\.\d+)?))|(\d+(?:\.\d+)?)\s*(\$|€|£|₹|¥|USD|EUR|GBP|INR|JPY|CAD|AUD|rupees?|bucks?|dollars?)?/i);
+    if (match) {
+      const amtStr = match[2] || match[3];
+      const currStr = match[1] || match[4] || homeCurrency;
+      const amt = Number(amtStr);
+      if (!isNaN(amt) && amt > 0) {
+        const desc = trimmed
+          .replace(/(?:(\$|€|£|₹|¥|USD|EUR|GBP|INR|JPY|CAD|AUD|rupees?|bucks?|dollars?)\s*(\d+(?:\.\d+)?))|(\d+(?:\.\d+)?)\s*(\$|€|£|₹|¥|USD|EUR|GBP|INR|JPY|CAD|AUD|rupees?|bucks?|dollars?)?/ig, "")
+          .replace(/^(spent|paid|bought|on|for|in|\s|,)+/i, "")
+          .replace(/(\s|,)+$/i, "")
+          .trim();
+
+        extracted.push({
+          amount: amt,
+          currency: normalizeCurrencyCode(currStr, homeCurrency),
+          description: desc || "Expense",
+        });
+      }
+    }
+  }
+
+  const items = extracted.length > 0 ? extracted : [{
+    amount: 0,
+    currency: homeCurrency,
+    description: text,
+  }];
+
+  return items.map((item, idx) => {
+    let category = "General Expense";
+    const lowerDesc = item.description.toLowerCase();
+    if (lowerDesc.includes("food") || lowerDesc.includes("dinner") || lowerDesc.includes("lunch") || lowerDesc.includes("coffee") || lowerDesc.includes("groceries")) {
+      category = "Food & Dining";
+    } else if (lowerDesc.includes("game") || lowerDesc.includes("steam") || lowerDesc.includes("movie") || lowerDesc.includes("netflix")) {
+      category = "Entertainment & Subscriptions";
+    } else if (lowerDesc.includes("travel") || lowerDesc.includes("flight") || lowerDesc.includes("train") || lowerDesc.includes("bus") || lowerDesc.includes("hotel") || lowerDesc.includes("trip")) {
+      category = "Travel & Leisure";
+    } else if (lowerDesc.includes("rent") || lowerDesc.includes("apartment") || lowerDesc.includes("house")) {
+      category = "Housing & Rent";
+    } else if (lowerDesc.includes("gym") || lowerDesc.includes("fitness") || lowerDesc.includes("health")) {
+      category = "Healthcare & Fitness";
+    } else if (lowerDesc.includes("shopping") || lowerDesc.includes("clothes") || lowerDesc.includes("shoes")) {
+      category = "Shopping & Personal";
+    }
+
+    let fxRateToHome = 1.0;
+    if (item.currency !== homeCurrency) {
+      const rate = rates[item.currency];
+      if (rate && rate > 0) {
+        fxRateToHome = 1 / rate;
+      } else {
+        const entryUsd = DEFAULT_USD_RATES[item.currency] || 1;
+        const homeUsd = DEFAULT_USD_RATES[homeCurrency] || 1;
+        fxRateToHome = homeUsd / entryUsd;
+      }
+    }
+    const convertedAmount = Number((item.amount * fxRateToHome).toFixed(2));
+
+    return {
+      description: item.description || (items.length > 1 ? `Item ${idx + 1}` : text),
+      category,
+      amount: item.amount,
+      currency: item.currency,
+      converted_amount: convertedAmount,
+      home_currency: homeCurrency,
+      fx_rate_used: Number(fxRateToHome.toFixed(4)),
+      flag: "on_track" as const,
+      advice: "Logged into your financial ledger. Keep an eye on category balance across expenditures.",
+      is_recurring: false,
+      entry_type: (item.amount > 0 ? "expense" : "reflection") as "expense" | "reflection",
+      suggested_budget: null,
+    };
+  });
+}
+
+  // Main Journal Entry Analysis Route with Multi-Item Extraction
   app.post("/api/analyze-entry", async (req, res) => {
     // Defensive Payload Ingestion (Null-Safe Destructuring)
     const data = (req.body && typeof req.body === "object") ? req.body : {};
@@ -368,11 +496,11 @@ Guidelines:
       return;
     }
 
-    try {
-      // 1. Fetch exchange rates for user's home currency
-      const rates = await getExchangeRates(homeCurrency);
+    // Pre-fetch exchange rates for user's home currency
+    const rates = await getExchangeRates(homeCurrency);
 
-      // 2. Build Gemini prompt with schema
+    try {
+      // Build Gemini prompt with explicit instructions for multi-item / multi-expense extraction
       const prompt = `
 You are an expert, empathetic financial companion analyzing a user's free-text financial journal entry.
 The user's configured home currency is: "${homeCurrency}".
@@ -384,11 +512,18 @@ User's Journal Entry:
 ${text}
 """
 
-Analyze the entry carefully:
-1. Determine the entry type: "expense" (money spent or committed), "income" (earnings/received), "reflection" (thoughts/questions/plans about finances), or "question".
-2. Extract the numeric amount (0 if purely reflection/question without specific expense/income amount).
-3. Identify the currency symbol/code mentioned (e.g. $, USD, €, EUR, ₹, INR, £, GBP, ¥, JPY, CAD, AUD, etc.). Default to "${homeCurrency}" if none mentioned. Standardize to a 3-letter ISO code (e.g. USD, EUR, INR, GBP, JPY, CAD, AUD, etc.).
-4. Assign a specific, clean category:
+CRITICAL INSTRUCTION - MULTI-ITEM EXTRACTION:
+The user input may mention MULTIPLE expenses, transactions, purchases, or thoughts in a single sentence (for example: "Spent 20$ on games 1000 rupees on food 300 on travel", or "Bought groceries for 50 bucks and paid 30 euros for gas").
+You MUST SPLIT multi-item or multi-expense inputs into distinct, separate line items.
+If the input only contains a single expense or reflection, return an array with that one transaction object.
+Do NOT combine multiple expenses into one. Every individual item/purchase/category must be its own object in the "transactions" array.
+
+For each distinct transaction/item:
+1. "description": A concise, clear label for what was spent or thought (e.g., "Games", "Food / Groceries", "Travel", "Coffee").
+2. "entry_type": Determine whether this item is "expense" (money spent or committed), "income" (earnings/received), "reflection" (thoughts/questions/plans about finances), or "question".
+3. "amount": Extract the specific numeric amount for THIS item (e.g. 20, 1000, 300). Set to 0 if purely reflection/question without a numeric amount.
+4. "currency": Extract the currency mentioned for this item (e.g. $, USD, €, EUR, ₹, INR, rupees, £, GBP, ¥, JPY, CAD, AUD, etc.). If a symbol or name is used (e.g. "rupees", "bucks"), standardize to standard 3-letter ISO code or currency code (e.g., INR for rupees, USD for bucks/$). If no currency is explicitly mentioned for a specific item in the sentence, infer from context or default to "${homeCurrency}".
+5. "category": Assign the most accurate category from:
    - "Food & Dining"
    - "Housing & Rent"
    - "Transportation"
@@ -401,45 +536,50 @@ Analyze the entry carefully:
    - "Education & Professional"
    - "Travel & Leisure"
    - "Financial Reflection"
-5. Assign an assessment flag:
+6. "flag": Assign an assessment flag:
    - "overspend_risk": if the cost seems unusually high, impulsive, stretches budget, or is flagged by user as a splurge
    - "on_track": reasonable, planned, standard everyday or productive expenditure
    - "savings_opportunity": identifiable areas to cut back, switch subscriptions, or negotiate discounts
    - "informational": general thought, salary incoming, or question
-6. Provide "advice": 2-3 sentences of direct, warm, journal-toned financial companion advice speaking directly to the user ("You..."). Give practical guidance or acknowledge their discipline/reflection.
-7. Detect if this looks like a recurring expense (is_recurring: true/false), such as rent, gym subscription, streaming services (Netflix/Spotify), WiFi/phone bill, EMI/loan installment, insurance, weekly groceries routine, or monthly salary.
-8. If it looks recurring or regular, suggest a budget line in suggested_budget with:
-   - label: concise description (e.g., "Netflix Subscription", "Apartment Rent", "Weekly Groceries")
-   - amount: numeric budget amount
-   - currency: 3-letter ISO currency code
-   - frequency: "monthly" or "weekly"
-   If not recurring or not appropriate for a recurring budget, set suggested_budget to null.
+7. "advice": 1-2 sentences of direct, warm, journal-toned financial companion advice speaking directly to the user ("You...").
+8. "is_recurring": true if this item represents a recurring expense (rent, gym, streaming, WiFi, loan, weekly groceries, insurance), false otherwise.
+9. "suggested_budget": If recurring, provide { label, amount, currency, frequency: "weekly" | "monthly" }. Otherwise null.
 
-Return ONLY a valid JSON object matching the requested schema.
+Return ONLY a valid JSON object matching the requested schema with a "transactions" array.
 `;
 
       const analysisSchema = {
         type: "object",
         properties: {
-          entry_type: { type: "string", enum: ["expense", "income", "reflection", "question"] },
-          category: { type: "string" },
-          amount: { type: "number" },
-          currency: { type: "string" },
-          flag: { type: "string", enum: ["overspend_risk", "on_track", "savings_opportunity", "informational"] },
-          advice: { type: "string" },
-          is_recurring: { type: "boolean" },
-          suggested_budget: {
-            type: ["object", "null"],
-            properties: {
-              label: { type: "string" },
-              amount: { type: "number" },
-              currency: { type: "string" },
-              frequency: { type: "string", enum: ["weekly", "monthly"] }
-            },
-            required: ["label", "amount", "currency", "frequency"]
+          transactions: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                description: { type: "string" },
+                entry_type: { type: "string", enum: ["expense", "income", "reflection", "question"] },
+                category: { type: "string" },
+                amount: { type: "number" },
+                currency: { type: "string" },
+                flag: { type: "string", enum: ["overspend_risk", "on_track", "savings_opportunity", "informational"] },
+                advice: { type: "string" },
+                is_recurring: { type: "boolean" },
+                suggested_budget: {
+                  type: ["object", "null"],
+                  properties: {
+                    label: { type: "string" },
+                    amount: { type: "number" },
+                    currency: { type: "string" },
+                    frequency: { type: "string", enum: ["weekly", "monthly"] }
+                  },
+                  required: ["label", "amount", "currency", "frequency"]
+                }
+              },
+              required: ["description", "entry_type", "category", "amount", "currency", "flag", "advice", "is_recurring"]
+            }
           }
         },
-        required: ["entry_type", "category", "amount", "currency", "flag", "advice", "is_recurring"]
+        required: ["transactions"]
       };
 
       const aiResponseText = await generateContentWithFallback(prompt, analysisSchema);
@@ -452,53 +592,88 @@ Return ONLY a valid JSON object matching the requested schema.
         parsedAnalysis = JSON.parse(cleaned);
       }
 
-      // Compute precise conversion to home currency
-      const rawAmount = typeof parsedAnalysis.amount === "number" ? Math.max(0, parsedAnalysis.amount) : 0;
-      const entryCurrency = normalizeCurrencyCode(parsedAnalysis.currency, homeCurrency);
-
-      if (parsedAnalysis.suggested_budget && parsedAnalysis.suggested_budget.currency) {
-        parsedAnalysis.suggested_budget.currency = normalizeCurrencyCode(parsedAnalysis.suggested_budget.currency, homeCurrency);
+      let rawTransactions: any[] = [];
+      if (Array.isArray(parsedAnalysis)) {
+        rawTransactions = parsedAnalysis;
+      } else if (Array.isArray(parsedAnalysis?.transactions)) {
+        rawTransactions = parsedAnalysis.transactions;
+      } else if (Array.isArray(parsedAnalysis?.items)) {
+        rawTransactions = parsedAnalysis.items;
+      } else if (parsedAnalysis && typeof parsedAnalysis === "object") {
+        rawTransactions = [parsedAnalysis];
       }
 
-      let fxRateToHome = 1.0;
-      if (entryCurrency === homeCurrency) {
-        fxRateToHome = 1.0;
-      } else {
-        // rates are based on homeCurrency: 1 homeCurrency = rates[entryCurrency] entryCurrency
-        // So 1 entryCurrency = 1 / rates[entryCurrency] homeCurrency
-        const rateAgainstHome = rates[entryCurrency];
-        if (rateAgainstHome && rateAgainstHome > 0) {
-          fxRateToHome = 1 / rateAgainstHome;
-        } else {
-          // Check USD bridge
-          const entryUsd = DEFAULT_USD_RATES[entryCurrency] || 1;
-          const homeUsd = DEFAULT_USD_RATES[homeCurrency] || 1;
-          fxRateToHome = homeUsd / entryUsd;
+      if (rawTransactions.length === 0) {
+        rawTransactions = [parsedAnalysis || {}];
+      }
+
+      const finalAnalyses = rawTransactions.map((item: any, idx: number) => {
+        const rawAmount = typeof item.amount === "number" ? Math.max(0, item.amount) : 0;
+        const entryCurrency = normalizeCurrencyCode(item.currency, homeCurrency);
+
+        if (item.suggested_budget && item.suggested_budget.currency) {
+          item.suggested_budget.currency = normalizeCurrencyCode(item.suggested_budget.currency, homeCurrency);
         }
-      }
 
-      const convertedAmount = Number((rawAmount * fxRateToHome).toFixed(2));
+        let fxRateToHome = 1.0;
+        if (entryCurrency === homeCurrency) {
+          fxRateToHome = 1.0;
+        } else {
+          const rateAgainstHome = rates[entryCurrency];
+          if (rateAgainstHome && rateAgainstHome > 0) {
+            fxRateToHome = 1 / rateAgainstHome;
+          } else {
+            const entryUsd = DEFAULT_USD_RATES[entryCurrency] || 1;
+            const homeUsd = DEFAULT_USD_RATES[homeCurrency] || 1;
+            fxRateToHome = homeUsd / entryUsd;
+          }
+        }
 
-      const finalAnalysis = {
-        category: parsedAnalysis.category || "General Expense",
-        amount: rawAmount,
-        currency: entryCurrency,
-        converted_amount: convertedAmount,
-        home_currency: homeCurrency,
-        fx_rate_used: Number(fxRateToHome.toFixed(4)),
-        flag: parsedAnalysis.flag || "on_track",
-        advice: parsedAnalysis.advice || "Keep monitoring your expenses to maintain healthy cash flow.",
-        is_recurring: Boolean(parsedAnalysis.is_recurring),
-        entry_type: parsedAnalysis.entry_type || "expense",
-        suggested_budget: parsedAnalysis.suggested_budget || null
-      };
+        const convertedAmount = Number((rawAmount * fxRateToHome).toFixed(2));
+
+        return {
+          description: typeof item.description === "string" && item.description.trim() 
+            ? item.description.trim() 
+            : (rawTransactions.length > 1 ? `Item ${idx + 1}` : text),
+          category: item.category || "General Expense",
+          amount: rawAmount,
+          currency: entryCurrency,
+          converted_amount: convertedAmount,
+          home_currency: homeCurrency,
+          fx_rate_used: Number(fxRateToHome.toFixed(4)),
+          flag: item.flag || "on_track",
+          advice: item.advice || "Keep monitoring your expenses to maintain healthy cash flow.",
+          is_recurring: Boolean(item.is_recurring),
+          entry_type: item.entry_type || (rawAmount > 0 ? "expense" : "reflection"),
+          suggested_budget: item.suggested_budget || null,
+        };
+      });
 
       res.json({
         success: true,
-        analysis: finalAnalysis
+        analysis: finalAnalyses[0],
+        analyses: finalAnalyses,
+        transactions: finalAnalyses,
       });
     } catch (err: any) {
       console.error("[Analysis Error]", err);
+      // Resilient local fallback parsing if Gemini services hit rate limit or spending cap
+      try {
+        const fallbackItems = fallbackMultiItemParser(text, homeCurrency, rates);
+        if (fallbackItems.length > 0) {
+          console.log(`[Fallback Parser] Successfully extracted ${fallbackItems.length} transactions.`);
+          res.json({
+            success: true,
+            analysis: fallbackItems[0],
+            analyses: fallbackItems,
+            transactions: fallbackItems,
+          });
+          return;
+        }
+      } catch (fallbackErr) {
+        console.warn("[Fallback Parser Note]", fallbackErr);
+      }
+
       res.status(500).json({
         success: false,
         error: err.message || "Failed to analyze journal entry."

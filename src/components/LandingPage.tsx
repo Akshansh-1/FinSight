@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Wallet,
   ShieldCheck,
@@ -10,16 +10,10 @@ import {
   FileText,
   PieChart,
   ExternalLink,
-  Compass,
-  CheckCircle2,
-  XCircle
 } from "lucide-react";
-import firebaseConfig from "../../firebase-applet-config.json";
 
 interface LandingPageProps {
   onSignInWithGoogle: () => Promise<void>;
-  onSignInWithCredential?: (credentialJwt: string) => Promise<void>;
-  onContinueAsVerifiedUser: (email?: string, uid?: string) => void;
   onOpenThreatModel: () => void;
   onClearAuthError?: () => void;
   authLoading: boolean;
@@ -28,66 +22,12 @@ interface LandingPageProps {
 
 export const LandingPage: React.FC<LandingPageProps> = ({
   onSignInWithGoogle,
-  onSignInWithCredential,
-  onContinueAsVerifiedUser,
   onOpenThreatModel,
   onClearAuthError,
   authLoading,
   authError,
 }) => {
   const [signingIn, setSigningIn] = useState(false);
-
-  // Initialize Google Identity Services (GIS) button if available
-  useEffect(() => {
-    const setupGsi = () => {
-      const g = (window as any).google;
-      if (g?.accounts?.id && firebaseConfig.oAuthClientId) {
-        try {
-          g.accounts.id.initialize({
-            client_id: firebaseConfig.oAuthClientId,
-            callback: async (res: any) => {
-              if (res?.credential && onSignInWithCredential) {
-                setSigningIn(true);
-                try {
-                  await onSignInWithCredential(res.credential);
-                } finally {
-                  setSigningIn(false);
-                }
-              }
-            },
-            auto_select: false,
-            cancel_on_tap_outside: true,
-          });
-
-          const container = document.getElementById("gsi-button-container");
-          if (container && container.childNodes.length === 0) {
-            g.accounts.id.renderButton(container, {
-              theme: "outline",
-              size: "large",
-              text: "continue_with",
-              shape: "rectangular",
-              width: 320,
-              logo_alignment: "left",
-            });
-          }
-        } catch (err) {
-          console.info("[GIS] GSI initialization note:", err);
-        }
-      }
-    };
-
-    if ((window as any).google?.accounts?.id) {
-      setupGsi();
-    } else {
-      const interval = setInterval(() => {
-        if ((window as any).google?.accounts?.id) {
-          clearInterval(interval);
-          setupGsi();
-        }
-      }, 300);
-      return () => clearInterval(interval);
-    }
-  }, [onSignInWithCredential]);
 
   const handleSignIn = async () => {
     try {
@@ -213,30 +153,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </p>
           </div>
 
-          {/* Google Identity Services Native Button Container (if available) */}
-          <div id="gsi-button-container" className="w-full flex justify-center mb-3 min-h-[40px] empty:hidden"></div>
-
           {authError && (
             <div className="mb-5 p-3.5 border border-amber-300 bg-amber-50 text-amber-950 font-mono text-xs leading-relaxed flex flex-col gap-3">
               <div className="flex items-start gap-2">
                 <span className="font-bold text-amber-900 shrink-0">Authentication Notice:</span>
                 <span className="text-amber-900">{authError}</span>
-              </div>
-
-              {/* Instant Access for Confirmed Firebase User */}
-              <div className="pt-2 border-t border-amber-200 flex flex-col gap-2">
-                <p className="text-[11px] text-amber-900 font-medium">
-                  Your Google identity (<strong>akshansh.agrawal.94@gmail.com</strong>) is confirmed in Firebase Console. You can enter your journal directly:
-                </p>
-                <button
-                  type="button"
-                  onClick={() => onContinueAsVerifiedUser("akshansh.agrawal.94@gmail.com", "cmGrUXdsetNFSFxqzhhl77tjA")}
-                  className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 bg-[#16241C] hover:bg-[#253E2F] text-white font-mono text-xs uppercase tracking-wider font-semibold cursor-pointer transition-colors"
-                >
-                  <CheckCircle2 className="w-4 h-4 text-[#88D4A8]" />
-                  <span>Enter Journal as Verified Account</span>
-                  <ArrowRight className="w-3.5 h-3.5 ml-auto opacity-80" />
-                </button>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-amber-200 text-xs">
@@ -261,14 +182,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </div>
           )}
 
-          {/* Primary Google Sign-In with Cloud Firestore Isolation */}
+          {/* Official Firebase Google Sign-In */}
           <button
             id="google-signin-btn"
             onClick={handleSignIn}
-            disabled={signingIn || authLoading}
+            disabled={signingIn}
             className="w-full flex items-center justify-center gap-3 font-mono text-xs uppercase tracking-wider font-semibold py-3 px-4 bg-[#16241C] hover:bg-[#253E2F] active:bg-[#14241B] text-white transition-all disabled:opacity-50 cursor-pointer"
           >
-            {signingIn || authLoading ? (
+            {signingIn ? (
               <RefreshCw className="w-4 h-4 animate-spin text-[#88D4A8]" />
             ) : (
               <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
@@ -290,22 +211,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 />
               </svg>
             )}
-            <span>
-              {signingIn || authLoading ? "Connecting to Google Account..." : "Sign In with Google"}
-            </span>
-            {!signingIn && !authLoading && <ArrowRight className="w-4 h-4 opacity-75 ml-auto" />}
+            <span>Continue with Google</span>
+            {!signingIn && <ArrowRight className="w-4 h-4 opacity-75 ml-auto" />}
           </button>
-
-          {/* Quick Direct Sign-In as Registered User option */}
-          <div className="mt-3 text-center">
-            <button
-              type="button"
-              onClick={() => onContinueAsVerifiedUser("akshansh.agrawal.94@gmail.com", "cmGrUXdsetNFSFxqzhhl77tjA")}
-              className="font-mono text-xs text-[#2E7D52] hover:text-[#16241C] underline underline-offset-4 cursor-pointer"
-            >
-              Continue as Registered User (akshansh.agrawal.94@gmail.com)
-            </button>
-          </div>
 
           <div className="mt-4 pt-4 border-t border-[#16241C]/15 flex items-center justify-center gap-1.5 font-mono text-[10px] text-[#16241C]/60 uppercase tracking-wider">
             <Lock className="w-3 h-3 opacity-70" />

@@ -15,7 +15,8 @@ import {
   onSnapshot,
   query,
   orderBy,
-  getDoc
+  getDoc,
+  writeBatch
 } from "firebase/firestore";
 import {
   auth,
@@ -45,6 +46,7 @@ import { CenteringBreathingModal } from "./components/CenteringBreathingModal";
 import { ReflectionStreakBadge } from "./components/ReflectionStreakBadge";
 import { LiveCurrencyTicker } from "./components/LiveCurrencyTicker";
 import { EditEntryModal } from "./components/EditEntryModal";
+import { formatCurrency } from "./lib/currencies";
 import { RefreshCw, Sparkles, PenLine, MessageSquare } from "lucide-react";
 
 const ZEN_MINDFUL_QUOTES = [
@@ -80,14 +82,6 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        localStorage.setItem(
-          "verified_user_session",
-          JSON.stringify({
-            uid: currentUser.uid,
-            displayName: currentUser.displayName || "Akshansh Agrawal",
-            email: currentUser.email || "akshansh.agrawal.94@gmail.com",
-          })
-        );
         setAuthLoading(false);
 
         // Fetch user preferences from Firestore
@@ -111,22 +105,6 @@ export default function App() {
           }
         }
       } else {
-        const saved = localStorage.getItem("verified_user_session");
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed?.uid) {
-              setUser({
-                uid: parsed.uid,
-                displayName: parsed.displayName || "Akshansh Agrawal",
-                email: parsed.email || "akshansh.agrawal.94@gmail.com",
-                photoURL: null,
-              } as User);
-              setAuthLoading(false);
-              return;
-            }
-          } catch {}
-        }
         setUser(null);
         setAuthLoading(false);
       }
@@ -311,29 +289,9 @@ export default function App() {
       const cred = GoogleAuthProvider.credential(credentialJwt);
       await signInWithCredential(auth, cred);
     } catch (err: any) {
-      console.warn("[Auth] GIS Credential note:", err);
-      // If credential token exchange triggers project configuration limits, enter as verified account directly
-      handleContinueAsVerifiedUser("akshansh.agrawal.94@gmail.com", "cmGrUXdsetNFSFxqzhhl77tjA");
+      console.warn("[Auth] Credential sign-in error:", err);
+      setAuthError("Failed to authenticate with Google credential.");
     }
-  };
-
-  // Direct Verified User Entry (for confirmed Firebase user in console)
-  const handleContinueAsVerifiedUser = (
-    email = "akshansh.agrawal.94@gmail.com",
-    uid = "cmGrUXdsetNFSFxqzhhl77tjA"
-  ) => {
-    setAuthError(null);
-    const verifiedUser = {
-      uid,
-      displayName: "Akshansh Agrawal",
-      email,
-      photoURL: null,
-    } as User;
-    setUser(verifiedUser);
-    localStorage.setItem(
-      "verified_user_session",
-      JSON.stringify({ uid, email, displayName: "Akshansh Agrawal" })
-    );
   };
 
   // Sign Out
@@ -343,16 +301,22 @@ export default function App() {
     } catch (err) {
       console.error("Sign out error:", err);
     }
-    localStorage.removeItem("verified_user_session");
     setUser(null);
     setEntries([]);
     setBudgets([]);
   };
 
-  // Analyze & Save Journal Entry
+  // Analyze & Save Journal Entry (Multi-Item Batch Support)
   const handleAnalyzeAndSave = async (
     text: string
-  ): Promise<{ success: boolean; analysis?: FinancialAnalysis; error?: string; entryId?: string }> => {
+  ): Promise<{
+    success: boolean;
+    analysis?: FinancialAnalysis;
+    analyses?: FinancialAnalysis[];
+    error?: string;
+    entryId?: string;
+    entryIds?: string[];
+  }> => {
     if (!user) {
       return { success: false, error: "You must be signed in or in preview mode to log entries." };
     }
@@ -381,49 +345,96 @@ export default function App() {
       }
 
       const resData = await response.json();
-      if (!resData.success || !resData.analysis) {
+      if (!resData.success) {
         throw new Error(resData.error || "Analysis response was invalid.");
       }
 
-      const analysis: FinancialAnalysis = resData.analysis;
-      const entryId = `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const rawList: FinancialAnalysis[] = Array.isArray(resData.analyses) && resData.analyses.length > 0
+        ? resData.analyses
+        : (Array.isArray(resData.transactions) && resData.transactions.length > 0
+          ? resData.transactions
+          : (resData.analysis ? [resData.analysis] : []));
 
-      // 2. Persist to Firestore under isolated owner path
-      const path = `users/${user.uid}/interactions/${entryId}`;
-      const payload = sanitizeFirestorePayload({
-        userId: user.uid,
-        text,
-        timestamp: new Date().toISOString(),
-        createdAt: Date.now(),
-        analysis,
+      if (rawList.length === 0) {
+        throw new Error("No valid financial entries could be parsed from input.");
+      }
+
+      // 2. Iterate over transactions array and execute writeBatch to save each as distinct Firestore document
+      const batch = writeBatch(db);
+      const createdEntries: JournalEntry[] = [];
+      const entryIds: string[] = [];
+      const baseTime = Date.now();
+
+      rawList.forEach((txAnalysis, idx) => {
+        const entryId = `entry_${baseTime + idx}_${Math.random().toString(36).substring(2, 7)}`;
+        entryIds.push(entryId);
+
+        // Display description if multiple items were extracted, or fallback to full text
+        const itemText = txAnalysis.description && rawList.length > 1
+          ? txAnalysis.description
+          : text;
+
+        const payload = sanitizeFirestorePayload({
+          userId: user.uid,
+          text: itemText,
+          originalPrompt: rawList.length > 1 ? text : undefined,
+          timestamp: new Date(baseTime + idx * 100).toISOString(),
+          createdAt: baseTime + idx * 100,
+          analysis: txAnalysis,
+        });
+
+        const interactionRef = doc(db, "users", user.uid, "interactions", entryId);
+        batch.set(interactionRef, payload);
+
+        createdEntries.push({
+          id: entryId,
+          userId: user.uid,
+          text: itemText,
+          originalPrompt: rawList.length > 1 ? text : undefined,
+          timestamp: new Date(baseTime + idx * 100).toISOString(),
+          createdAt: baseTime + idx * 100,
+          analysis: txAnalysis,
+        });
       });
 
       try {
-        const interactionRef = doc(db, "users", user.uid, "interactions", entryId);
-        await setDoc(interactionRef, payload);
-      } catch (err) {
-        console.warn("Firestore save notice, syncing to resilient vault:", err);
+        await batch.commit();
+      } catch (batchErr) {
+        console.warn("writeBatch notice, executing Promise.all fallback:", batchErr);
+        await Promise.all(
+          createdEntries.map((entry) => {
+            const interactionRef = doc(db, "users", user.uid, "interactions", entry.id);
+            return setDoc(interactionRef, sanitizeFirestorePayload({
+              userId: user.uid,
+              text: entry.text,
+              originalPrompt: entry.originalPrompt,
+              timestamp: entry.timestamp,
+              createdAt: entry.createdAt,
+              analysis: entry.analysis,
+            })).catch((err) => {
+              console.warn(`Firestore save notice for entry ${entry.id}:`, err);
+            });
+          })
+        );
       }
 
-      // Always maintain resilient state and local cache
-      const newEntry: JournalEntry = {
-        id: entryId,
-        userId: user.uid,
-        text,
-        timestamp: new Date().toISOString(),
-        createdAt: Date.now(),
-        analysis,
-      };
-      setEntries((prev) => [newEntry, ...prev.filter((e) => e.id !== entryId)]);
+      // Always maintain resilient state and local cache with all created entries
+      setEntries((prev) => [...createdEntries, ...prev.filter((e) => !entryIds.includes(e.id))]);
       const currentVault: JournalEntry[] = JSON.parse(
         localStorage.getItem(`journal_entries_${user.uid}`) || "[]"
       );
       localStorage.setItem(
         `journal_entries_${user.uid}`,
-        JSON.stringify([newEntry, ...currentVault.filter((e) => e.id !== entryId)])
+        JSON.stringify([...createdEntries, ...currentVault.filter((e) => !entryIds.includes(e.id))])
       );
 
-      return { success: true, analysis, entryId };
+      return {
+        success: true,
+        analysis: rawList[0],
+        analyses: rawList,
+        entryId: entryIds[0],
+        entryIds,
+      };
     } catch (err: any) {
       console.error("Analyze & Save Error:", err);
       return {
@@ -688,8 +699,6 @@ export default function App() {
       <>
         <LandingPage
           onSignInWithGoogle={handleSignInWithGoogle}
-          onSignInWithCredential={handleSignInWithCredential}
-          onContinueAsVerifiedUser={handleContinueAsVerifiedUser}
           onClearAuthError={() => setAuthError(null)}
           onOpenThreatModel={() => setShowThreatModel(true)}
           authLoading={authLoading}

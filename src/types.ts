@@ -24,12 +24,15 @@ export interface FinancialAnalysis {
   entry_type: EntryType;
   intentTag?: string;
   suggested_budget?: SuggestedBudget | null;
+  description?: string;
+  item_text?: string;
 }
 
 export interface JournalEntry {
   id: string;
   userId: string;
   text: string;
+  originalPrompt?: string;
   timestamp: string; // ISO string
   createdAt: number; // epoch ms
   analysis: FinancialAnalysis;
