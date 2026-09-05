@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+:root {
+  --bg-canvas: #F8F9F5;
+  --ink-primary: #13241A;
+  --ink-secondary: #2E4738;
+  --ink-muted: #526E5D;
+  --border-sage: #8FA899;
+  --border-sage-light: #C4D4CB;
+  --accent-sage: #2D6A4F;
+  --fill-sage-subtle: #EDF3EF;
+}
+
+@layer base {
+  * {
+    border-radius: 0px !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink-primary);
+    background-color: var(--bg-canvas);
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Technical Indexing & Systematic Labels */
+  .font-tech, [data-tech="true"] {
+    font-family: 'Space Grotesk', 'JetBrains Mono', monospace;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .font-sans {
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+/* Technical Bracketed Index Tag */
+.tech-index {
+  font-family: 'Space Grotesk', 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #13241A;
+}
+
+/* Rigid Data-Dense Grid Border Utilities */
+.editorial-panel {
+  background-color: #FFFFFF;
+  border: 1px solid #8FA899;
+}
+
+.editorial-header {
+  background-color: #EDF3EF;
+  border-bottom: 1px solid #8FA899;
+  padding: 0.5rem 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Eliminate bounce, ping, and pulse animations for crisp technical precision */
+.animate-ping, .animate-bounce, .animate-pulse, .animate-zen-pulse, .animate-breathing-orb {
+  animation: none !important;
+}
+
+/* Custom technical scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #EDF3EF;
+}
+::-webkit-scrollbar-thumb {
+  background: #8FA899;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2D6A4F;
+}
+

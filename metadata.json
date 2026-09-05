@@ -1,0 +1,6 @@
+{
+  "name": "FinSight: Personal Ledger",
+  "description": "An AI-powered personal financial ledger and budget tracker that analyzes entries, flags spending risks, and monitors recurring budgets with Firebase authentication and Firestore.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

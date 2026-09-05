@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "JournalEntry": {
+      "title": "JournalEntry",
+      "description": "A user's financial journal entry and AI financial analysis",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner UID" },
+        "text": { "type": "string", "description": "Raw journal entry text" },
+        "timestamp": { "type": "string", "description": "ISO timestamp" },
+        "createdAt": { "type": "number", "description": "Timestamp in milliseconds" },
+        "analysis": {
+          "type": "object",
+          "description": "Financial analysis breakdown",
+          "properties": {
+            "category": { "type": "string" },
+            "amount": { "type": "number" },
+            "currency": { "type": "string" },
+            "converted_amount": { "type": "number" },
+            "home_currency": { "type": "string" },
+            "fx_rate_used": { "type": "number" },
+            "flag": { "type": "string", "enum": ["overspend_risk", "on_track", "savings_opportunity", "informational"] },
+            "advice": { "type": "string" },
+            "is_recurring": { "type": "boolean" },
+            "entry_type": { "type": "string", "enum": ["expense", "reflection_question", "budget_planning"] },
+            "suggested_budget": {
+              "type": "object",
+              "properties": {
+                "label": { "type": "string" },
+                "amount": { "type": "number" },
+                "currency": { "type": "string" },
+                "frequency": { "type": "string", "enum": ["weekly", "monthly"] }
+              }
+            }
+          },
+          "required": ["category", "amount", "currency", "converted_amount", "home_currency", "fx_rate_used", "flag", "advice", "is_recurring", "entry_type"]
+        }
+      },
+      "required": ["userId", "text", "createdAt", "analysis"]
+    },
+    "RecurringBudget": {
+      "title": "RecurringBudget",
+      "description": "Recurring budget tracking line",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner UID" },
+        "label": { "type": "string", "description": "Budget label" },
+        "amount": { "type": "number", "description": "Budget amount cap" },
+        "currency": { "type": "string", "description": "ISO currency code" },
+        "frequency": { "type": "string", "enum": ["weekly", "monthly"] },
+        "category": { "type": "string", "description": "Budget category tag" },
+        "createdAt": { "type": "number" },
+        "sourceEntryId": { "type": "string" }
+      },
+      "required": ["userId", "label", "amount", "currency", "frequency", "createdAt"]
+    },
+    "UserPreferences": {
+      "title": "UserPreferences",
+      "description": "User preference settings such as home currency",
+      "type": "object",
+      "properties": {
+        "homeCurrency": { "type": "string", "description": "Default ISO currency code" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["homeCurrency"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/interactions/{interactionId}": {
+      "schema": "JournalEntry",
+      "description": "User financial journal entries and AI analysis"
+    },
+    "/users/{userId}/budgets/{budgetId}": {
+      "schema": "RecurringBudget",
+      "description": "User recurring budgets and spending thresholds"
+    },
+    "/users/{userId}/preferences/{settingId}": {
+      "schema": "UserPreferences",
+      "description": "User profile preference settings"
+    }
+  }
+}
