@@ -119,7 +119,7 @@ export function exportToExcel({
     }
 
     const dateStr = new Date().toISOString().slice(0, 10);
-    const filename = `LedgerPulse_${scopeLabel}_${dateStr}.xlsx`;
+    const filename = `FinSight_${scopeLabel}_${dateStr}.xlsx`;
 
     // Write file
     XLSX.writeFile(workbook, filename);

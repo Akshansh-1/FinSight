@@ -53,7 +53,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </div>
             <div className="flex items-center gap-2">
               <span className="font-serif font-normal text-xl tracking-tight text-[#16241C]">
-                LedgerPulse
+                FinSight
               </span>
               <span className="font-mono text-[10px] uppercase tracking-widest px-2 py-0.5 border border-[#16241C]/30 text-[#16241C]">
                 Sage & Clarity
@@ -99,7 +99,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
         {/* Subtitle */}
         <p className="mt-4 text-base sm:text-lg max-w-xl leading-relaxed text-[#16241C]/70 font-sans">
-          Write naturally in any currency. LedgerPulse gently organizes your expenses, translates foreign currencies with live FX rates, and surfaces peaceful clarity.
+          Write naturally in any currency. FinSight gently organizes your expenses, translates foreign currencies with live FX rates, and surfaces peaceful clarity.
         </p>
 
         {/* Interactive Live Sample Reflection Card */}

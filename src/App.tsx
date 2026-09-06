@@ -686,7 +686,7 @@ export default function App() {
         <div className="flex flex-col items-center gap-3 font-mono text-xs">
           <div className="w-8 h-8 border border-[#8FA899] border-t-[#13241A] animate-spin" />
           <p className="font-tech text-xs uppercase tracking-wider font-bold text-[#13241A]">
-            INITIALIZING LEDGERPULSE SECURITY & SESSION...
+            INITIALIZING FinSight SECURITY & SESSION...
           </p>
         </div>
       </div>

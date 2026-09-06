@@ -1,4 +1,4 @@
-# Financial Journal & Budget Tracker (LedgerPulse)
+# Financial Journal & Budget Tracker (FinSight)
 
 A user-authenticated, AI-powered financial journaling application built with **React**, **Express**, **Google Gemini 3.6 Flash**, and **Cloud Firestore**.
 

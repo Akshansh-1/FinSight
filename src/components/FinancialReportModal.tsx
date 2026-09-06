@@ -73,13 +73,13 @@ export const FinancialReportModal: React.FC<FinancialReportModalProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ledgerpulse_financial_vault_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `finsight_financial_vault_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleExportMarkdown = () => {
-    let md = `# LedgerPulse Financial & Mindfulness Journal Export\n`;
+    let md = `# FinSight Financial & Mindfulness Journal Export\n`;
     md += `**Date:** ${new Date().toLocaleDateString()}\n`;
     md += `**Home Currency:** ${homeCurrency}\n`;
     md += `**Total Journal Entries:** ${entries.length}\n`;
@@ -112,7 +112,7 @@ export const FinancialReportModal: React.FC<FinancialReportModalProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ledgerpulse_journal_${new Date().toISOString().slice(0, 10)}.md`;
+    a.download = `finsight_journal_${new Date().toISOString().slice(0, 10)}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
